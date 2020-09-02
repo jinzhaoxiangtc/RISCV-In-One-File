@@ -189,32 +189,39 @@ class Page :
 
 class Mem :
 
-  def __init__(self, f, encode, prg_head) :
+  def __init__(self, f, encode, phdr) :
 
     self.__pages = dict()
     self.encode = encode 
 
-    for phdr_entry in prg_head.phdr_list :
+    for phdr_entry in phdr.phdr_list :
 
-      addr = phdr_entry.p_vaddr
-      offset = addr & PG_MASK
+      ###########################################
+      # initialize the program segment with zeros
+      vaddr = phdr_entry.p_vaddr
       memsz = phdr_entry.p_memsz
       flags = phdr_entry.p_flags
 
-      while memsz :
-        self.__allocat_new_page(addr, flags)
-        memsz = memsz - (PG_SIZE - offset)
-        if memsz < 0 :
-          memsz = 0
+      while memsz > 0 :
+        self.__allocat_new_page(vaddr, flags)
+        ini_size = PG_SIZE - (vaddr & PG_MASK)
+        vaddr = vaddr + ini_size
+        memsz = memsz - ini_size
+      ###########################################
 
+      ###########################################
+      # load the program segment from ELF file
       f.seek(phdr_entry.p_offset)
+      vaddr = phdr_entry.p_vaddr
       filesz = phdr_entry.p_filesz
 
       while filesz :
+        # a list of int, which only read one byte
         data = [int.from_bytes(f.read(1), byteorder=self.encode, signed=False), ]
-        self.write(addr, data)
+        self.write(vaddr, data)
+        vaddr = vaddr + 1
         filesz = filesz - 1
-        addr = addr + 1
+      ###########################################
 
   def __allocat_new_page(self, vaddr, flags) :
 
@@ -253,12 +260,12 @@ class Elf64 :
   
   def __init__(self, f) :
     
-    self.elf_head = Elf64_Ehdr(f)
-    self.prg_head = Elf64_Phdr(f, self.elf_head)
+    self.ehdr = Elf64_Ehdr(f)
+    self.phdr = Elf64_Phdr(f, self.ehdr)
 
   def print(self) :
     
-    self.elf_head.print()
+    self.ehdr.print()
 
 ###############################
 #####     main program
@@ -269,7 +276,7 @@ f = open(sys.argv[1], 'rb')
 elf = Elf64(f)
 elf.print()
 
-mem = Mem(f, elf.elf_head.encode, elf.prg_head)
+mem = Mem(f, elf.ehdr.encode, elf.phdr)
 
 print(hex(mem.read(0x11470, 4)))
 
