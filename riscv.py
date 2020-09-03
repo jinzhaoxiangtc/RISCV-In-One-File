@@ -244,7 +244,7 @@ class Mem :
 
     page.data[pg_offset:pg_offset+size] = data
 
-    assert len(page.data) == PG_SIZE, "The page size is changed"
+    assert len(page.data) == PG_SIZE, "The page size has been changed"
 
   def read(self, vaddr, size) :
 
@@ -267,6 +267,286 @@ class Elf64 :
     
     self.ehdr.print()
 
+class Decode32 :
+
+  def __init__(self) :
+
+    # bits
+    # 6 5 4 3 2 1 0
+    self.__dec_func = (
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none, # 0x10
+      self._dec_none,
+      self._dec_none,
+      self.__dec_I_TYPE,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self.__dec_AUIPC,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none, # 0x20
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none, # 0x30
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none
+    )
+
+    # bits
+    # 14  13  12
+    self.__dec_func_I_TYPE = (
+      self.__dec_ADDI,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none
+    )
+
+  def _dec_none(self, opcode) :
+    print("NaISA")
+
+  def __dec_AUIPC(self, opcode) :
+    print("AUIPC")
+
+  def __dec_ADDI(self, opcode) :
+    print("ADDI")
+
+  def __dec_I_TYPE(self, opcode) :
+    self.__dec_func_I_TYPE[(opcode >> 12) & 7](opcode)
+
+  def dec(self, opcode) :
+    self.__dec_func[opcode & 0x7f](opcode)
+
+class Decode16 (Decode32) :
+
+  def __init__(self) :
+
+    # bits
+    # 15  14  13  1  0
+    self.__dec_func = (
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self.__dec_C_LI,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self.__dec_10001,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none
+    )
+
+    # bits
+    # 12  11  10  6  5
+    self.__dec_func_10001 = (
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self.__dec_C_SUB,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none, # 0x10
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none,
+      self._dec_none
+    )
+
+  def __dec_C_SUB(self, opcode) :
+    print("C.SUB")
+
+  def __dec_C_LI(self, opcode) :
+    print("C.LI")
+
+  def __dec_10001(self, opcode) :
+    upper = (opcode >> 8) & 0x1c
+    lower = (opcode >> 5) & 0x03
+    self.__dec_func_10001[upper | lower](opcode)
+
+  def dec(self, opcode) :
+    self.__dec_func[(opcode >> 11) | (opcode & 3)](opcode)
+
+class Cpu :
+
+  def __init__(self, ehdr, mem) :
+
+    self.pc = ehdr.e_entry
+    self.mem = mem
+    self.decode32 = Decode32()
+    self.decode16 = Decode16()
+
+    print("The starting PC = " + hex(self.pc))
+
+  def step(self) :
+
+    opcode = self.mem.read(self.pc, 4)
+
+    if (opcode & 3) == 3 :      # 32-bit Op
+      self.decode32.dec(opcode)
+      self.pc = self.pc + 4
+    else :                      # 16-bit Op
+      opcode = opcode & 0xffff
+      self.decode16.dec(opcode)
+      self.pc = self.pc + 2
+
 ###############################
 #####     main program
 ###############################
@@ -278,6 +558,12 @@ elf.print()
 
 mem = Mem(f, elf.ehdr.encode, elf.phdr)
 
-print(hex(mem.read(0x11470, 4)))
+cpu = Cpu(elf.ehdr, mem)
+cpu.step()
+cpu.step()
+cpu.step()
+cpu.step()
+cpu.step()
+cpu.step()
 
 f.close()
