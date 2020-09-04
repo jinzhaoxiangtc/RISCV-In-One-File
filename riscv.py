@@ -6,6 +6,47 @@ PG_SHFT = 12
 PG_SIZE = 1 << PG_SHFT
 PG_MASK = PG_SIZE - 1
 
+CMD        = "CMD"
+SRC0_NUM   = "SRC0_NUM"
+SRC0_VALUE = "SRC0_VALUE"
+DST0_NUM   = "DST0_NUM"
+DST0_VALUE = "DST0_VALUE"
+IMM        = "IMM"
+PC         = "PC"
+
+def get_Uimm(opcode) :
+
+  uimm = opcode & 0xfffff000
+
+  if uimm >> 31 :
+    uimm = uimm ^ 0xffffffff
+    uimm = uimm + 1
+    uimm = -uimm
+
+  return uimm
+
+def get_Iimm(opcode) :
+
+  iimm = opcode >> 20
+
+  if iimm >> 11 :
+    iimm = iimm ^ 0xfff
+    iimm = iimm + 1
+    iimm = -iimm
+
+  return iimm
+
+def get_Cimm(opcode) :
+
+  cimm = (opcode >> 2) & 0x1f
+
+  if (opcode >> 12 ) & 1 :
+    cimm = cimm ^ 0x1f
+    cimm = cimm + 1
+    cimm = -cimm
+
+  return cimm
+
 class Elf64_Ehdr :
   
   def __init__(self, f) :
@@ -267,170 +308,202 @@ class Elf64 :
     
     self.ehdr.print()
 
+class Execute :
+
+  def exe_auipc(myself, inst) :
+
+    imm = inst[IMM]
+    pc  = inst[PC]
+
+    inst[DST0_VALUE] = pc + imm
+
+    print(inst)
+
+  def exe_addi(myself, inst) :
+
+    print(inst)
+
+  def exe_c_sub(myself, inst) :
+
+    print(inst)
+
+  def exe_c_li(myself, inst) :
+
+    print(inst)
+
 class Decode32 :
 
   def __init__(self) :
 
     # bits
     # 6 5 4 3 2 1 0
-    self.__dec_func = (
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none, # 0x10
-      self._dec_none,
-      self._dec_none,
-      self.__dec_I_TYPE,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self.__dec_AUIPC,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none, # 0x20
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none, # 0x30
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none
+    self.dec_func = (
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none, # 0x10
+      self.dec_none,
+      self.dec_none,
+      self.dec_I_TYPE,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_AUIPC,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none, # 0x20
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none, # 0x30
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none
     )
 
     # bits
     # 14  13  12
-    self.__dec_func_I_TYPE = (
-      self.__dec_ADDI,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none
+    self.dec_func_I_TYPE = (
+      self.dec_ADDI,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none
     )
 
-  def _dec_none(self, opcode) :
+  def dec_none(self, opcode, cpu) :
     print("NaISA")
 
-  def __dec_AUIPC(self, opcode) :
-    print("AUIPC")
+  def dec_AUIPC(self, opcode, cpu) :
 
-  def __dec_ADDI(self, opcode) :
-    print("ADDI")
+    return {
+      CMD       : cpu.execute.exe_auipc,
+      DST0_NUM  : (opcode >> 7) & 0x1f,
+      IMM       : get_Uimm(opcode),
+      PC        : cpu.pc
+    }
 
-  def __dec_I_TYPE(self, opcode) :
-    self.__dec_func_I_TYPE[(opcode >> 12) & 7](opcode)
+  def dec_ADDI(self, opcode, cpu) :
 
-  def dec(self, opcode) :
-    self.__dec_func[opcode & 0x7f](opcode)
+    return {
+      CMD       : cpu.execute.exe_addi,
+      DST0_NUM  : (opcode >> 7) & 0x1f,
+      SRC0_NUM  : (opcode >> 15) & 0x1f,
+      IMM       : get_Iimm(opcode)
+    }
+
+  def dec_I_TYPE(self, opcode, cpu) :
+    return self.dec_func_I_TYPE[(opcode >> 12) & 7](opcode, cpu)
 
 class Decode16 (Decode32) :
 
@@ -438,100 +511,110 @@ class Decode16 (Decode32) :
 
     # bits
     # 15  14  13  1  0
-    self.__dec_func = (
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self.__dec_C_LI,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self.__dec_10001,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none
+    self.dec_func = (
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_C_LI,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_10001,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none
     )
 
     # bits
     # 12  11  10  6  5
-    self.__dec_func_10001 = (
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self.__dec_C_SUB,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none, # 0x10
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none,
-      self._dec_none
+    self.dec_func_10001 = (
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_C_SUB,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none, # 0x10
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none,
+      self.dec_none
     )
 
-  def __dec_C_SUB(self, opcode) :
-    print("C.SUB")
+  def dec_C_SUB(self, opcode, cpu) :
 
-  def __dec_C_LI(self, opcode) :
-    print("C.LI")
+    return {
+      CMD       : cpu.execute.exe_c_sub,
+      DST0_NUM  : ((opcode >> 7) & 0x7) + 8,
+      SRC0_NUM  : ((opcode >> 2) & 0x7) + 8,
+    }
 
-  def __dec_10001(self, opcode) :
+  def dec_C_LI(self, opcode, cpu) :
+
+    return {
+      CMD       : cpu.execute.exe_c_li,
+      DST0_NUM  : (opcode >> 7) & 0x1f,
+      IMM       : get_Cimm(opcode)
+    }
+
+  def dec_10001(self, opcode, cpu) :
     upper = (opcode >> 8) & 0x1c
     lower = (opcode >> 5) & 0x03
-    self.__dec_func_10001[upper | lower](opcode)
-
-  def dec(self, opcode) :
-    self.__dec_func[(opcode >> 11) | (opcode & 3)](opcode)
+    return self.dec_func_10001[upper | lower](opcode, cpu)
 
 class Cpu :
 
   def __init__(self, ehdr, mem) :
 
     self.pc = ehdr.e_entry
+    self.reg = [0] *32
+
     self.mem = mem
     self.decode32 = Decode32()
     self.decode16 = Decode16()
+    self.execute = Execute()
 
     print("The starting PC = " + hex(self.pc))
 
@@ -540,12 +623,14 @@ class Cpu :
     opcode = self.mem.read(self.pc, 4)
 
     if (opcode & 3) == 3 :      # 32-bit Op
-      self.decode32.dec(opcode)
+      inst = self.decode32.dec_func[opcode & 0x7f](opcode, self)
       self.pc = self.pc + 4
     else :                      # 16-bit Op
       opcode = opcode & 0xffff
-      self.decode16.dec(opcode)
+      inst = self.decode16.dec_func[((opcode >> 11 ) & 0x1c) | (opcode & 3)](opcode, self)
       self.pc = self.pc + 2
+
+    inst[CMD](inst);
 
 ###############################
 #####     main program
