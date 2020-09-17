@@ -16,6 +16,9 @@ DST0_VALUE = "DST0_VALUE"
 IMM        = "IMM"
 PC         = "PC"
 BR_TARGET  = "BR_TARGET"
+MEM_SIZE   = "MEM_SIZE"
+MEM_ADDR   = "MEM_ADDR"
+ST_DATA    = "ST_DATA"
 
 def get_Iimm(opcode) :
 
@@ -27,6 +30,17 @@ def get_Iimm(opcode) :
     iimm = -iimm
 
   return iimm
+
+def get_Simm(opcode) :
+
+  simm = ((opcode >> 20) & 0xfe0) | ((opcode >> 7) & 0x1f)
+
+  if opcode >> 31 :
+    simm = simm ^ 0xfff
+    simm = simm + 1
+    simm = -simm
+
+  return simm
 
 def get_Bimm(opcode) :
 
@@ -294,8 +308,8 @@ class Mem :
 
       while filesz :
         # a list of int, which only read one byte
-        data = [int.from_bytes(f.read(1), byteorder=self.encode, signed=False), ]
-        self.write(vaddr, data)
+        data = int.from_bytes(f.read(1), byteorder=self.encode, signed=False)
+        self.write(vaddr, data, 1)
         vaddr = vaddr + 1
         filesz = filesz - 1
       ###########################################
@@ -309,17 +323,15 @@ class Mem :
       page = Page(flags)
       self.__pages[pg_tag] = page
 
-  # data is a list of int, the size is the number of bytes
-  def write(self, vaddr, data) :
+  def write(self, vaddr, data, size) :
 
     pg_tag = vaddr >> PG_SHFT
     pg_offset = vaddr & PG_MASK
     page = self.__pages.get(pg_tag)
-    size = len(data)
 
     assert page, "The memory space is not allocated before write."
 
-    page.data[pg_offset:pg_offset+size] = data
+    page.data[pg_offset:pg_offset+size] = data.to_bytes(size, self.encode)
 
     assert len(page.data) == PG_SIZE, "The page size has been changed"
 
@@ -379,6 +391,22 @@ class Execute :
 
     if src1 >= src2 :
       inst[BR_TARGET] = inst[PC] + inst[IMM]
+
+  def exe_st(myself, inst) :
+
+    inst[MEM_ADDR] = inst[SRC1_VALUE] + inst[IMM]
+
+    # Store Byte
+    if inst[MEM_SIZE] == 1 :
+
+      data = inst[SRC2_VALUE] & 0xff
+
+      if data & 0x80 :
+        data = data ^ 0xff
+        data = data + 1
+        data = -data
+
+      inst[ST_DATA] = data
 
   def exe_c_sub(myself, inst) :
 
@@ -442,7 +470,7 @@ class Decode32 :
       self.dec_none, # 0x20
       self.dec_none,
       self.dec_none,
-      self.dec_none,
+      self.dec_ST,
       self.dec_none,
       self.dec_none,
       self.dec_none,
@@ -633,6 +661,16 @@ class Decode32 :
       SRC2_NUM  : (opcode >> 20) & 0x1f,
       IMM       : get_Bimm(opcode),
       PC        : cpu.pc
+    }
+
+  def dec_ST(self, opcode, cpu) :
+
+    return {
+      CMD       : cpu.execute.exe_st,
+      SRC1_NUM  : (opcode >> 15) & 0x1f,
+      SRC2_NUM  : (opcode >> 20) & 0x1f,
+      IMM       : get_Simm(opcode),
+      MEM_SIZE  : ((opcode >> 12) & 0x7) << 1 if (opcode >> 12) & 0x7 else 1,
     }
 
   def dec_I_TYPE(self, opcode, cpu) :
@@ -827,6 +865,9 @@ class Cpu :
 
     print(inst)
 
+    if inst.get(ST_DATA) :
+      self.mem.write(inst[MEM_ADDR], inst[ST_DATA], inst[MEM_SIZE])
+
     # Do not write to X0
     if inst.get(DST0_NUM) and inst[DST0_NUM] :
       self.write_reg(inst)
@@ -861,7 +902,7 @@ mem = Mem(f, elf.ehdr.encode, elf.phdr)
 
 cpu = Cpu(elf.ehdr, mem)
 
-for i in range(18) :
+for i in range(25) :
   cpu.step()
 
 f.close()
