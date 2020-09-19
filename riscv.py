@@ -11,8 +11,8 @@ SRC1_NUM   = "SRC1_NUM"
 SRC1_VALUE = "SRC1_VALUE"
 SRC2_NUM   = "SRC2_NUM"
 SRC2_VALUE = "SRC2_VALUE"
-DST0_NUM   = "DST0_NUM"
-DST0_VALUE = "DST0_VALUE"
+DST_NUM    = "DST_NUM"
+DST_VALUE  = "DST_VALUE"
 IMM        = "IMM"
 PC         = "PC"
 BR_TARGET  = "BR_TARGET"
@@ -22,25 +22,11 @@ ST_DATA    = "ST_DATA"
 
 def get_Iimm(opcode) :
 
-  iimm = opcode >> 20
-
-  if iimm >> 11 :
-    iimm = iimm ^ 0xfff
-    iimm = iimm + 1
-    iimm = -iimm
-
-  return iimm
+  return ( ( ( opcode >> 20 ) + 0x800 ) & 0xfff ) - 0x800
 
 def get_Simm(opcode) :
 
-  simm = ((opcode >> 20) & 0xfe0) | ((opcode >> 7) & 0x1f)
-
-  if opcode >> 31 :
-    simm = simm ^ 0xfff
-    simm = simm + 1
-    simm = -simm
-
-  return simm
+  return ( ( (((opcode >> 20) & 0xfe0) | ((opcode >> 7) & 0x1f)) + 0x800 ) & 0xfff ) - 0x800
 
 def get_Bimm(opcode) :
 
@@ -96,6 +82,11 @@ def get_CBimm(opcode) :
     cbimm = -cbimm
 
   return cbimm
+
+def get_CJimm(opcode) :
+
+  cjimm = ((opcode >> 1) & 0x800) | ((opcode << 2) & 0x400) | ((opcode >>1) & 0x300) | ((opcode << 1) & 0x80) | ((opcode >> 1) & 0x40) | ((opcode << 3) & 0x20) | ((opcode >> 7) & 0x10) | ((opcode >> 2) & 0xe)
+  return ( (cjimm + 0x800) & 0xfff ) - 0x800
 
 class Elf64_Ehdr :
   
@@ -360,28 +351,28 @@ class Execute :
 
   def exe_auipc(myself, inst) :
 
-    inst[DST0_VALUE] = inst[PC] + inst[IMM]
+    inst[DST_VALUE] = inst[PC] + inst[IMM]
 
   def exe_addi(myself, inst) :
 
-    inst[DST0_VALUE] = inst[SRC1_VALUE] + inst[IMM]
+    inst[DST_VALUE] = inst[SRC1_VALUE] + inst[IMM]
 
   def exe_andi(myself, inst) :
 
-    inst[DST0_VALUE] = inst[SRC1_VALUE] & inst[IMM]
+    inst[DST_VALUE] = inst[SRC1_VALUE] & inst[IMM]
 
   def exe_slli(myself, inst) :
 
-    inst[DST0_VALUE] = inst[SRC1_VALUE] << inst[IMM]
+    inst[DST_VALUE] = inst[SRC1_VALUE] << inst[IMM]
 
   def exe_jal(myself, inst) :
 
-    inst[DST0_VALUE] = inst[PC] + 4
+    inst[DST_VALUE] = inst[PC] + 4
     inst[BR_TARGET] = inst[PC] + inst[IMM]
 
   def exe_jalr(myself, inst) :
 
-    inst[DST0_VALUE] = inst[PC] + 4
+    inst[DST_VALUE] = inst[PC] + 4
     inst[BR_TARGET] = (inst[SRC1_VALUE] + inst[IMM]) & 0xfffffffffffffffe
 
   def exe_bgeu(myself, inst) :
@@ -395,42 +386,48 @@ class Execute :
   def exe_st(myself, inst) :
 
     inst[MEM_ADDR] = inst[SRC1_VALUE] + inst[IMM]
-
-    # Store Byte
-    if inst[MEM_SIZE] == 1 :
-
-      data = inst[SRC2_VALUE] & 0xff
-
-      if data & 0x80 :
-        data = data ^ 0xff
-        data = data + 1
-        data = -data
-
-      inst[ST_DATA] = data
+    inst[ST_DATA] =  inst[SRC2_VALUE] & (0x100 ** inst[MEM_SIZE] - 1)
 
   def exe_c_sub(myself, inst) :
 
-    inst[DST0_VALUE] = inst[SRC1_VALUE] - inst[SRC2_VALUE]
+    inst[DST_VALUE] = inst[SRC1_VALUE] - inst[SRC2_VALUE]
 
   def exe_c_add(myself, inst) :
 
-    inst[DST0_VALUE] = inst[SRC1_VALUE] + inst[SRC2_VALUE]
+    inst[DST_VALUE] = inst[SRC1_VALUE] + inst[SRC2_VALUE]
 
   def exe_c_li(myself, inst) :
 
-    inst[DST0_VALUE] = inst[IMM]
+    inst[DST_VALUE] = inst[IMM]
 
   def exe_c_mv(myself, inst) :
 
-    inst[DST0_VALUE] = inst[SRC1_VALUE]
+    inst[DST_VALUE] = inst[SRC1_VALUE]
 
   def exe_c_bnez(myself, inst) :
+
+    if inst[SRC1_VALUE] != 0 :
+      inst[BR_TARGET] = inst[PC] + inst[IMM]
+
+  def exe_c_jr(myself, inst) :
+
+    inst[BR_TARGET] = inst[SRC1_VALUE]
+
+  def exe_c_addi(myself, inst) :
+
+    inst[DST_VALUE] = inst[SRC1_VALUE] + inst[IMM]
+
+  def exe_c_andi(myself, inst) :
+
+    inst[DST_VALUE] = inst[SRC1_VALUE] & inst[IMM]
+
+  def exe_c_j(myself, inst) :
 
     inst[BR_TARGET] = inst[PC] + inst[IMM]
 
 class Decode32 :
 
-  def __init__(self) :
+  def __init__(self, cpu) :
 
     # bits
     # 6 5 4 3 2 1 0
@@ -578,19 +575,6 @@ class Decode32 :
       self.dec_ANDI
     )
 
-    # bits
-    # 14  13  12
-    self.dec_func_B_TYPE = (
-      self.dec_none,
-      self.dec_none,
-      self.dec_none,
-      self.dec_none,
-      self.dec_none,
-      self.dec_none,
-      self.dec_none,
-      self.dec_BGEU
-    )
-
   def dec_none(self, opcode, cpu) :
     print("NaISA")
 
@@ -598,7 +582,7 @@ class Decode32 :
 
     return {
       CMD       : cpu.execute.exe_auipc,
-      DST0_NUM  : (opcode >> 7) & 0x1f,
+      DST_NUM   : (opcode >> 7) & 0x1f,
       IMM       : get_Uimm(opcode),
       PC        : cpu.pc
     }
@@ -607,7 +591,7 @@ class Decode32 :
 
     return {
       CMD       : cpu.execute.exe_addi,
-      DST0_NUM  : (opcode >> 7) & 0x1f,
+      DST_NUM   : (opcode >> 7) & 0x1f,
       SRC1_NUM  : (opcode >> 15) & 0x1f,
       IMM       : get_Iimm(opcode)
     }
@@ -616,7 +600,7 @@ class Decode32 :
 
     return {
       CMD       : cpu.execute.exe_andi,
-      DST0_NUM  : (opcode >> 7) & 0x1f,
+      DST_NUM   : (opcode >> 7) & 0x1f,
       SRC1_NUM  : (opcode >> 15) & 0x1f,
       IMM       : get_Iimm(opcode)
     }
@@ -627,7 +611,7 @@ class Decode32 :
 
     return {
       CMD       : cpu.execute.exe_slli,
-      DST0_NUM  : (opcode >> 7) & 0x1f,
+      DST_NUM   : (opcode >> 7) & 0x1f,
       SRC1_NUM  : (opcode >> 15) & 0x1f,
       IMM       : (opcode >> 20) & 0x1f
     }
@@ -636,7 +620,7 @@ class Decode32 :
 
     return {
       CMD       : cpu.execute.exe_jal,
-      DST0_NUM  : (opcode >> 7) & 0x1f,
+      DST_NUM   : (opcode >> 7) & 0x1f,
       IMM       : get_Jimm(opcode),
       PC        : cpu.pc
     }
@@ -647,19 +631,9 @@ class Decode32 :
 
     return {
       CMD       : cpu.execute.exe_jalr,
-      DST0_NUM  : (opcode >> 7) & 0x1f,
+      DST_NUM   : (opcode >> 7) & 0x1f,
       SRC1_NUM  : (opcode >> 15) & 0x1f,
       IMM       : get_Iimm(opcode),
-      PC        : cpu.pc
-    }
-
-  def dec_BGEU(self, opcode, cpu) :
-
-    return {
-      CMD       : cpu.execute.exe_bgeu,
-      SRC1_NUM  : (opcode >> 15) & 0x1f,
-      SRC2_NUM  : (opcode >> 20) & 0x1f,
-      IMM       : get_Bimm(opcode),
       PC        : cpu.pc
     }
 
@@ -677,7 +651,16 @@ class Decode32 :
     return self.dec_func_I_TYPE[(opcode >> 12) & 7](opcode, cpu)
 
   def dec_B_TYPE(self, opcode, cpu) :
-    return self.dec_func_B_TYPE[(opcode >> 12) & 7](opcode, cpu)
+    
+    bit_14_12 = (opcode >> 12) & 7
+
+    return {
+      CMD       : cpu.execute.exe_bgeu,
+      SRC1_NUM  : (opcode >> 15) & 0x1f,
+      SRC2_NUM  : (opcode >> 20) & 0x1f,
+      IMM       : get_Bimm(opcode),
+      PC        : cpu.pc
+    }
 
 class Decode16 (Decode32) :
 
@@ -687,7 +670,7 @@ class Decode16 (Decode32) :
     # 15  14  13  1  0
     self.dec_func = (
       self.dec_none,
-      self.dec_none,
+      self.dec_C_ADDI,
       self.dec_none,
       self.dec_none,
       self.dec_none,
@@ -707,14 +690,14 @@ class Decode16 (Decode32) :
       self.dec_10010,
       self.dec_none,
       self.dec_none,
+      self.dec_C_J,
       self.dec_none,
       self.dec_none,
       self.dec_none,
       self.dec_none,
       self.dec_none,
       self.dec_none,
-      self.dec_none,
-      self.dec_none,
+      self.dec_C_SD,
       self.dec_C_BNEZ,
       self.dec_none,
       self.dec_none
@@ -731,10 +714,10 @@ class Decode16 (Decode32) :
       self.dec_none,
       self.dec_none,
       self.dec_none,
-      self.dec_none,
-      self.dec_none,
-      self.dec_none,
-      self.dec_none,
+      self.dec_C_ANDI,
+      self.dec_C_ANDI,
+      self.dec_C_ANDI,
+      self.dec_C_ANDI,
       self.dec_C_SUB,
       self.dec_none,
       self.dec_none,
@@ -747,10 +730,10 @@ class Decode16 (Decode32) :
       self.dec_none,
       self.dec_none,
       self.dec_none,
-      self.dec_none,
-      self.dec_none,
-      self.dec_none,
-      self.dec_none,
+      self.dec_C_ANDI,
+      self.dec_C_ANDI,
+      self.dec_C_ANDI,
+      self.dec_C_ANDI,
       self.dec_none,
       self.dec_none,
       self.dec_none,
@@ -761,7 +744,7 @@ class Decode16 (Decode32) :
 
     return {
       CMD       : cpu.execute.exe_c_sub,
-      DST0_NUM  : ((opcode >> 7) & 0x7) + 8,
+      DST_NUM   : ((opcode >> 7) & 0x7) + 8,
       SRC1_NUM  : ((opcode >> 7) & 0x7) + 8,
       SRC2_NUM  : ((opcode >> 2) & 0x7) + 8,
     }
@@ -771,7 +754,7 @@ class Decode16 (Decode32) :
     if (opcode >> 7) & 0x1f :
       return {
         CMD       : cpu.execute.exe_c_li,
-        DST0_NUM  : (opcode >> 7) & 0x1f,
+        DST_NUM   : (opcode >> 7) & 0x1f,
         IMM       : get_Cimm(opcode)
       }
 
@@ -783,7 +766,7 @@ class Decode16 (Decode32) :
     if (opcode >> 7) & 0x1f :
       return {
         CMD       : cpu.execute.exe_c_mv,
-        DST0_NUM  : (opcode >> 7) & 0x1f,
+        DST_NUM   : (opcode >> 7) & 0x1f,
         SRC1_NUM  : (opcode >> 2) & 0x1f
       }
 
@@ -800,9 +783,61 @@ class Decode16 (Decode32) :
 
     return {
       CMD       : cpu.execute.exe_c_add,
-      DST0_NUM  : (opcode >> 7) & 0x1f,
+      DST_NUM   : (opcode >> 7) & 0x1f,
       SRC1_NUM  : (opcode >> 7) & 0x1f,
       SRC2_NUM  : (opcode >> 2) & 0x1f
+    }
+
+  def dec_C_ANDI(self, opcode, cpu) :
+
+    return {
+      CMD       : cpu.execute.exe_c_andi,
+      DST_NUM   : ((opcode >> 7) & 0x7) + 8,
+      SRC1_NUM  : ((opcode >> 7) & 0x7) + 8,
+      IMM       : get_Cimm(opcode),
+    }
+
+  def dec_C_JR(self, opcode, cpu) :
+
+    return {
+      CMD       : cpu.execute.exe_c_jr,
+      SRC1_NUM  : (opcode >> 7) & 0x1f,
+    }
+
+  def dec_C_ADDI(self, opcode, cpu) :
+
+    rs1 = (opcode >> 7) & 0x1f
+    imm = get_Cimm(opcode)
+
+    if rs1 :
+      if imm != 0 : # addi
+        return {
+        CMD       : cpu.execute.exe_c_addi,
+        DST_NUM   : rs1,
+        SRC1_NUM  : rs1,
+        IMM       : imm
+        }
+      else : # hint
+        pass
+    else : # nop
+      pass
+
+  def dec_C_J(self, opcode, cpu) :
+
+    return {
+      CMD       : cpu.execute.exe_c_j,
+      IMM       : get_CJimm(opcode),
+      PC        : cpu.pc
+    }
+
+  def dec_C_SD(self, opcode, cpu) :
+
+    return {
+      CMD       : cpu.execute.exe_st,
+      SRC1_NUM  : ((opcode >> 7) & 0x7) + 8,
+      SRC2_NUM  : ((opcode >> 2) & 0x7) + 8,
+      IMM       : ((opcode << 1) & 0xc0) | ((opcode >> 7) & 0x38), # unsigned
+      MEM_SIZE  : 8
     }
 
   def dec_10001(self, opcode, cpu) :
@@ -826,7 +861,7 @@ class Decode16 (Decode32) :
         if (opcode >> 2) & 0x1f : # Rs2 != 0
           return self.dec_C_MV(opcode, cpu)
         else : # Rs2 == 0
-          pass
+          return self.dec_C_JR(opcode, cpu)
       else : # Rd == 0
         pass
 
@@ -839,7 +874,7 @@ class Cpu :
 
     self.mem = mem
 
-    self.decode32 = Decode32()
+    self.decode32 = Decode32(self)
     self.decode16 = Decode16()
 
     self.execute = Execute()
@@ -869,7 +904,7 @@ class Cpu :
       self.mem.write(inst[MEM_ADDR], inst[ST_DATA], inst[MEM_SIZE])
 
     # Do not write to X0
-    if inst.get(DST0_NUM) and inst[DST0_NUM] :
+    if inst.get(DST_NUM) and inst[DST_NUM] :
       self.write_reg(inst)
 
     if inst.get(BR_TARGET) :
@@ -885,9 +920,9 @@ class Cpu :
 
   def write_reg(self, inst) :
 
-    assert isinstance(inst[DST0_VALUE], int)
+    assert isinstance(inst[DST_VALUE], int)
 
-    self.reg[inst[DST0_NUM]] = inst[DST0_VALUE]
+    self.reg[inst[DST_NUM]] = inst[DST_VALUE]
 
 ###############################
 #####     main program
@@ -902,7 +937,7 @@ mem = Mem(f, elf.ehdr.encode, elf.phdr)
 
 cpu = Cpu(elf.ehdr, mem)
 
-for i in range(25) :
+for i in range(40) :
   cpu.step()
 
 f.close()
