@@ -650,7 +650,6 @@ class Decode32 :
       CMD       : cpu.execute.exe_auipc,
       DST_NUM   : (opcode >> 7) & 0x1f,
       IMM       : get_Uimm(opcode),
-      PC        : cpu.pc
     }
 
   def dec_ADDI(self, opcode, cpu) :
@@ -699,7 +698,6 @@ class Decode32 :
       CMD       : cpu.execute.exe_jal,
       DST_NUM   : (opcode >> 7) & 0x1f,
       IMM       : get_Jimm(opcode),
-      PC        : cpu.pc
     }
 
   def dec_JALR(self, opcode, cpu) :
@@ -711,7 +709,6 @@ class Decode32 :
       DST_NUM   : (opcode >> 7) & 0x1f,
       SRC1_NUM  : (opcode >> 15) & 0x1f,
       IMM       : get_Iimm(opcode),
-      PC        : cpu.pc
     }
 
   def dec_STORE(self, opcode, cpu) :
@@ -764,7 +761,6 @@ class Decode32 :
       SRC1_NUM  : (opcode >> 15) & 0x1f,
       SRC2_NUM  : (opcode >> 20) & 0x1f,
       IMM       : get_Bimm(opcode),
-      PC        : cpu.pc
     }
 
   def dec_0011011(self, opcode, cpu) :
@@ -915,7 +911,6 @@ class Decode16 (Decode32) :
       CMD       : cpu.execute.exe_c_beqz,
       SRC1_NUM  : ((opcode >> 7) & 0x7) + 8,
       IMM       : get_CBimm(opcode),
-      PC        : cpu.pc
     }
 
   def dec_C_BNEZ(self, opcode, cpu) :
@@ -924,7 +919,6 @@ class Decode16 (Decode32) :
       CMD       : cpu.execute.exe_c_bnez,
       SRC1_NUM  : ((opcode >> 7) & 0x7) + 8,
       IMM       : get_CBimm(opcode),
-      PC        : cpu.pc
     }
 
   def dec_C_ADD(self, opcode, cpu) :
@@ -990,7 +984,6 @@ class Decode16 (Decode32) :
       CMD       : cpu.execute.exe_c_jalr,
       DST_NUM   : 1,
       SRC1_NUM  : (opcode >> 7) & 0x1f,
-      PC        : cpu.pc
     }
 
   def dec_C_ADDI(self, opcode, cpu) :
@@ -1029,7 +1022,6 @@ class Decode16 (Decode32) :
     return {
       CMD       : cpu.execute.exe_c_j,
       IMM       : get_CJimm(opcode),
-      PC        : cpu.pc
     }
 
   def dec_C_SD(self, opcode, cpu) :
@@ -1158,10 +1150,12 @@ class Cpu :
 
     if (opcode & 3) == 3 :      # 32-bit Op
       inst = self.decode32.dec_func[opcode & 0x7f](opcode, self)
+      inst[PC] = self.pc
       self.pc = self.pc + 4
     else :                      # 16-bit Op
       opcode = opcode & 0xffff
       inst = self.decode16.dec_func[((opcode >> 11 ) & 0x1c) | (opcode & 3)](opcode, self)
+      inst[PC] = self.pc
       self.pc = self.pc + 2
 
     if SRC1_NUM in inst :
@@ -1211,7 +1205,7 @@ mem = Mem(f, elf.ehdr.encode, elf.phdr)
 
 cpu = Cpu(elf.ehdr, mem)
 
-for i in range(160) :
+for i in range(190) :
   cpu.step()
 
 f.close()
