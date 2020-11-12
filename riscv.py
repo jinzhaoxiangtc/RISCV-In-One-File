@@ -1430,7 +1430,7 @@ class Cpu :
     self.pc = ehdr.e_entry
     self.reg = [0] *32
     # initialize SP
-    self.reg[2] = 0xfee8b50
+    self.reg[2] = 0xfee8b40
 
     self.mem = mem
     self.execute = Execute()
@@ -1483,6 +1483,10 @@ class Cpu :
         else : # set and return the update program break
           inst[DST_VALUE] = syscall_arg1
           PROGRAM_BREAK = syscall_arg1
+      elif syscall_num == 1024 : # open
+        print(syscall_arg1)
+        print(syscall_arg2)
+        print(syscall_arg3)
       else :
         assert 0, "Syscall " + int(syscall_num) + "is not implemented."
 
