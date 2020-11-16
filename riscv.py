@@ -296,7 +296,7 @@ class Mem :
 
       if (vaddr + memsz) > PROGRAM_BREAK :
         PROGRAM_BREAK = vaddr + memsz
-        print(hex(PROGRAM_BREAK))
+        print("Set Program Break" + hex(PROGRAM_BREAK))
 
       while memsz > 0 :
         self.__allocat_new_page(vaddr, flags)
@@ -342,6 +342,25 @@ class Mem :
     page.data[pg_offset:pg_offset+size] = data.to_bytes(size, self.encode)
 
     assert len(page.data) == PG_SIZE, "The page size has been changed"
+
+  def write_stream(self, vaddr, stream) :
+  
+    pg_tag = vaddr >> PG_SHFT
+    pg_offset = vaddr & PG_MASK
+
+    if pg_tag not in self.__pages :
+      self.__allocat_new_page(vaddr, ["PF_W", "PF_R"])
+      print("Allocate a new page on Address 0x" + hex(vaddr))
+
+    page = self.__pages.get(pg_tag)
+    size = len(stream)
+
+    page.data[pg_offset:pg_offset+size] = stream.encode('utf-8') # convert string to bytes
+    page.data[pg_offset+size] = 0 # Null at the end
+
+    assert len(page.data) == PG_SIZE, "The page size has been changed"
+
+    return vaddr+size+1
 
   def read(self, vaddr, size, is_singed) :
 
@@ -1429,14 +1448,31 @@ class Cpu :
 
     self.pc = ehdr.e_entry
     self.reg = [0] *32
-    # initialize SP
-    self.reg[2] = 0xfee8b40
-
+    
     self.mem = mem
     self.execute = Execute()
 
     self.decode32 = Decode32(self)
     self.decode16 = Decode16()
+
+    # initialize SP
+    self.reg[2] = 0xfee8b40
+    # push argc and argv[] into the stack
+    argc = len(sys.argv) - 1 # exclude python
+    argv = list()
+    for i in range(1, len(sys.argv)) :
+      argv.append(sys.argv[i])
+
+    print(argv)
+    # push argc to stack
+    self.mem.write(self.reg[2], argc, 8)
+
+    #argv_offset = self.reg[2] + (2 + argc) * 8
+    argv_offset = 0xfee8be8
+    for i in range(0, len(argv)) :
+      self.mem.write(self.reg[2] + 8 + i * 8, argv_offset, 8)
+      print(hex(argv_offset))
+      argv_offset = self.mem.write_stream(argv_offset, argv[i])
 
     print("The starting PC = " + hex(self.pc))
 
