@@ -2,6 +2,7 @@
 
 import sys
 import os
+import time
 
 PG_SHFT = 12
 PG_SIZE = 1 << PG_SHFT
@@ -23,6 +24,17 @@ SIGNED     = "SIGNED"
 ST_DATA    = "ST_DATA"
 
 PROGRAM_BREAK = 0
+
+#File flags
+
+O_RDONLY   = 0x0000  # open for reading only
+O_WRONLY   = 0x0001  # open for writing only
+O_RDWR     = 0x0002  # open for reading and writing
+O_NONBLOCK = 0x0004  # no delay
+O_APPEND   = 0x0008  # set append mode
+O_CREAT    = 0x0200  # create if nonexistant
+O_TRUNC    = 0x0400  # truncate to zero length
+O_EXCL     = 0x0800  # error if already exists
 
 def get_Iimm(opcode) :
 
@@ -382,6 +394,21 @@ class Mem :
 
     return page.data[pg_offset:pg_offset+size]
 
+  def read_string(self, vaddr) :
+
+    pg_tag = vaddr >> PG_SHFT
+    pg_offset = vaddr & PG_MASK
+    page = self.__pages.get(pg_tag)
+
+    assert page, "The memory space is not allocated before read" + hex(vaddr)
+
+    i = 0
+    while page.data[pg_offset + i] != 0 :
+      i = i + 1
+
+    barray = page.data[pg_offset:pg_offset+i]
+    return barray.decode()
+
 class Elf64 :
   
   def __init__(self, f) :
@@ -459,6 +486,10 @@ class Execute :
 
     inst[DST_VALUE] = inst[SRC1_VALUE] | inst[IMM]
 
+  def exe_xor(myself, inst) :
+
+    inst[DST_VALUE] = inst[SRC1_VALUE] ^ inst[SRC2_VALUE]
+
   def exe_xori(myself, inst) :
 
     inst[DST_VALUE] = inst[SRC1_VALUE] ^ inst[IMM]
@@ -489,7 +520,7 @@ class Execute :
 
   def exe_slli(myself, inst) :
 
-    inst[DST_VALUE] = inst[SRC1_VALUE] << inst[IMM]
+    inst[DST_VALUE] = (inst[SRC1_VALUE] << inst[IMM]) & ( (1 << 64) - 1 )
 
   def exe_slliw(myself, inst) :
 
@@ -604,6 +635,15 @@ class Execute :
   def exe_c_j(myself, inst) :
 
     inst[BR_TARGET] = inst[PC] + inst[IMM]
+
+  def exe_divw(myself, inst) :
+
+    src_1 = ((inst[SRC1_VALUE] + 0x80000000) & 0xffffffff) - 0x80000000
+    src_2 = ((inst[SRC2_VALUE] + 0x80000000) & 0xffffffff) - 0x80000000
+
+    result = src_1 // src_2
+
+    inst[DST_VALUE] = ((result + 0x80000000) & 0xffffffff) - 0x80000000
 
   def exe_divu(myself, inst) :
 
@@ -949,6 +989,9 @@ class Decode32 :
     elif func == 3 : # SLTU
       assert (opcode >> 25) == 0
       cmd = cpu.execute.exe_sltu
+    elif func == 4 : # XOR
+      assert (opcode >> 25) == 0
+      cmd = cpu.execute.exe_xor
     elif func == 5 :
       if opcode >> 25 : # DIVU
         cmd = cpu.execute.exe_divu
@@ -1020,6 +1063,9 @@ class Decode32 :
     elif func == 1 :   # sllw
       assert (opcode >> 25) == 0
       cmd = cpu.execute.exe_sllw
+    elif func == 4 :   # divw
+      assert (opcode >> 25) == 1
+      cmd = cpu.execute.exe_divw
 
     return {
       CMD       : cmd,
@@ -1073,7 +1119,7 @@ class Decode16 (Decode32) :
       self.dec_none,
       self.dec_C_SW,
       self.dec_C_BEQZ,
-      self.dec_none,
+      self.dec_C_SWSP,
       self.dec_none,
       self.dec_C_SD,
       self.dec_C_BNEZ,
@@ -1097,7 +1143,7 @@ class Decode16 (Decode32) :
       self.dec_C_ANDI,
       self.dec_C_ANDI,
       self.dec_C_SUB,
-      self.dec_none,
+      self.dec_C_XOR,
       self.dec_C_OR,
       self.dec_C_AND,
       self.dec_C_SRLI, # 0x10
@@ -1122,6 +1168,15 @@ class Decode16 (Decode32) :
 
     return {
       CMD       : cpu.execute.exe_sub,
+      DST_NUM   : ((opcode >> 7) & 0x7) + 8,
+      SRC1_NUM  : ((opcode >> 7) & 0x7) + 8,
+      SRC2_NUM  : ((opcode >> 2) & 0x7) + 8,
+    }
+
+  def dec_C_XOR(self, opcode, cpu) :
+
+    return {
+      CMD       : cpu.execute.exe_xor,
       DST_NUM   : ((opcode >> 7) & 0x7) + 8,
       SRC1_NUM  : ((opcode >> 7) & 0x7) + 8,
       SRC2_NUM  : ((opcode >> 2) & 0x7) + 8,
@@ -1417,6 +1472,16 @@ class Decode16 (Decode32) :
       SIGNED    : True,
     }
 
+  def dec_C_SWSP(self, opcode, cpu) :
+
+    return {
+      CMD       : cpu.execute.exe_st,
+      SRC1_NUM  : 2,
+      SRC2_NUM  : (opcode >> 2) & 0x1f,
+      IMM       : ((opcode >> 1) & 0xc0) | ((opcode >> 7) & 0x3c), # unsigned
+      MEM_SIZE  : 4
+    }
+
   def dec_10001(self, opcode, cpu) :
 
     upper = (opcode >> 8) & 0x1c
@@ -1456,7 +1521,7 @@ class Cpu :
     self.decode16 = Decode16()
 
     # initialize SP
-    self.reg[2] = 0xfee8b40
+    self.reg[2] = 0xfee8b50
     # push argc and argv[] into the stack
     argc = len(sys.argv) - 1 # exclude python
     argv = list()
@@ -1468,10 +1533,12 @@ class Cpu :
     self.mem.write(self.reg[2], argc, 8)
 
     #argv_offset = self.reg[2] + (2 + argc) * 8
-    argv_offset = 0xfee8be8
+    argv_offset = 0xfee8be5
     for i in range(0, len(argv)) :
+      # dump the argv pointers onto the stack
       self.mem.write(self.reg[2] + 8 + i * 8, argv_offset, 8)
       print(hex(argv_offset))
+      # dump the argv onto the stack
       argv_offset = self.mem.write_stream(argv_offset, argv[i])
 
     print("The starting PC = " + hex(self.pc))
@@ -1520,11 +1587,46 @@ class Cpu :
           inst[DST_VALUE] = syscall_arg1
           PROGRAM_BREAK = syscall_arg1
       elif syscall_num == 1024 : # open
-        print(syscall_arg1)
-        print(syscall_arg2)
-        print(syscall_arg3)
+        fileName = self.mem.read_string(syscall_arg1)
+
+        low_2_bits = syscall_arg2 & 0x3
+        if low_2_bits == O_RDONLY :
+          flags = os.O_RDONLY
+        elif low_2_bits == O_WRONLY :
+          flags = os.O_WRONLY
+        elif low_2_bits == O_RDWR :
+          flags = os.O_RDWR
+        else :
+          assert 0, "Invalid flags"
+
+        if syscall_arg2 & O_NONBLOCK :
+          flags = flags | os.O_NONBLOCK
+
+        if syscall_arg2 & O_APPEND :
+          flags = flags | os.O_APPEND
+
+        if syscall_arg2 & O_CREAT :
+          flags = flags | os.O_CREAT
+
+        if syscall_arg2 & O_TRUNC :
+          flags = flags | os.O_TRUNC
+
+        if syscall_arg2 & O_EXCL :
+          flags = flags | os.O_EXCL
+
+        inst[DST_VALUE] = os.open(fileName, flags)
+      elif syscall_num == 169 : # gettimeofday
+        assert syscall_arg2 == 0, "tz is not nullptr."
+        # write tv.tv_sec
+        seconds = time.time()
+        self.mem.write(syscall_arg1, int(seconds), 8)
+        # write tv.tv_usec
+        micro_seconds = (seconds - int(seconds)) * 1000000
+        self.mem.write(syscall_arg1 + 8, int(micro_seconds), 8)
+
+        inst[DST_VALUE] = 0
       else :
-        assert 0, "Syscall " + int(syscall_num) + "is not implemented."
+        assert 0, "Syscall " + str(syscall_num) + " is not implemented."
 
     inst[CMD](inst);
 
@@ -1555,6 +1657,7 @@ class Cpu :
     inst[SRC1_VALUE] = self.reg[inst[SRC1_NUM]]
 
     if SRC2_NUM in inst :
+
       inst[SRC2_VALUE] = self.reg[inst[SRC2_NUM]]
 
   def write_reg(self, inst) :
@@ -1578,7 +1681,7 @@ mem = Mem(f, elf.ehdr.encode, elf.phdr)
 
 cpu = Cpu(elf.ehdr, mem)
 
-for i in range(5000) :
+while True :
   cpu.step()
 
 f.close()
