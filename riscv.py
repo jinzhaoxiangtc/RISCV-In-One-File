@@ -344,6 +344,7 @@ class Mem :
 
     pg_tag = vaddr >> PG_SHFT
     pg_offset = vaddr & PG_MASK
+    print("write addr" + hex(vaddr))
 
     if pg_tag not in self.__pages :
       self.__allocat_new_page(vaddr, ["PF_W", "PF_R"])

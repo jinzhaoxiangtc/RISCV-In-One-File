@@ -14,21 +14,22 @@
 
 #define IS_NOT_ZR(num) ( num > 0 )
 
+#define GET_BIT_31_12(opcode) ( opcode & 0xfffff000 )
 #define GET_BIT_5_0(opcode) ( ((opcode >> 7) & 0x20) | ((opcode >> 2) & 0x1f) )
 #define GET_BIT_20_1(opcode) ( ((opcode >> 11) & 0x100000) | (opcode & 0xff000) | ((opcode >> 9) & 0x800) | ((opcode >> 20) & 0x7fe) )
 #define GET_BIT_12_1(opcode) ( ((opcode >> 19) & 0x1000) | ((opcode << 4) & 0x800) | ((opcode >> 20) & 0x7e0) | ((opcode >> 7) & 0x1e) )
-#define GET_BIT_7_1(opcode) ( ((opcode << 1) & 0xc0) | ((opcode << 3) & 0x20) | ((opcode >> 7) & 0x18) | ((opcode >> 2) & 0x6) )
+#define GET_BIT_8_1(opcode) ( ((opcode >> 4) & 0x100) | ((opcode << 1) & 0xc0) | ((opcode << 3) & 0x20) | ((opcode >> 7) & 0x18) | ((opcode >> 2) & 0x6) )
 #define GET_BIT_11_0(opcode) ( ((opcode >> 20) & 0xfe0) | ((opcode >> 7) & 0x1f) )
 #define GET_BIT_11_1(opcode) ( ((opcode >> 1) & 0x800) | ((opcode << 2) & 0x400) | ((opcode >>1) & 0x300) | ((opcode << 1) & 0x80) | ((opcode >> 1) & 0x40) | ((opcode << 3) & 0x20) | ((opcode >> 7) & 0x10) | ((opcode >> 2) & 0xe) )
 
-#define GET_UIMM(opcode) ( opcode & 0xfffff000 )
+#define GET_UIMM(opcode) ( (((REG)GET_BIT_31_12(opcode) + 0x80000000) & 0xffffffff) - 0x80000000)
 #define GET_IIMM(opcode) ( ((((REG)opcode >> 20) + 0x800) & 0xfff) - 0x800 )
 #define GET_JIMM(opcode) ( (((REG)GET_BIT_20_1(opcode) + 0x100000) & 0x1fffff) - 0x100000 )
 #define GET_BIMM(opcode) ( ((GET_BIT_12_1(opcode) + 0x1000) & 0x1fff) - 0x1000 )
 #define GET_SIMM(opcode) ( (((REG)GET_BIT_11_0(opcode) + 0x800) & 0xfff) - 0x800)
 
-#define GET_CIMM(opcode) ( (((REG)GET_BIT_5_0(opcode) + 0x20) & 0x3f) - 0x20)
-#define GET_CBIMM(opcode) ( (opcode & 0x1000) ? (~GET_BIT_7_1(opcode)+1) : (GET_BIT_7_1(opcode)) )
+#define GET_CIMM(opcode) ( (((REG)GET_BIT_5_0(opcode) + 0x20) & 0x3f) - 0x20 )
+#define GET_CBIMM(opcode) ( (((REG)GET_BIT_8_1(opcode) + 0x100) & 0x1ff) - 0x100 )
 #define GET_CJIMM(opcode) ( ((GET_BIT_11_1(opcode) + 0x800) & 0xfff) -0x800 )
 
 #define GET_RD(opcode) ( (opcode >> 7) & 0x1f )
@@ -50,19 +51,24 @@ typedef uint64_t UREG;
 enum COMMAND
 {
   CMD_AUIPC,
-  CMD_ADDI,
-  CMD_SUB,
   CMD_LI,
+  CMD_ADDI,
+  CMD_SLTIU,
+  CMD_XORI,
+  CMD_ANDI,
   CMD_JAL,
   CMD_JALR,
   CMD_J,
   CMD_BGEU,
-  CMD_ANDI,
   CMD_BNE,
   CMD_BEQ,
   CMD_BLTU,
   CMD_BLT,
   CMD_ADD,
+  CMD_SUB,
+  CMD_SLL,
+  CMD_SLTU,
+  CMD_XOR,
   CMD_AND,
   CMD_OR,
   CMD_ST,
@@ -100,8 +106,8 @@ const COMMAND imm_exe_tbl[8] =
   CMD_ADDI,
   CMD_SLLI,
   CMD_ADDI,
-  CMD_ADDI,
-  CMD_ADDI,
+  CMD_SLTIU,
+  CMD_XORI,
   CMD_SRXI,
   CMD_ADDI,
   CMD_ANDI 
@@ -135,16 +141,22 @@ const map<COMMAND, string> ExeClassString =
   {CMD_BNE, "BNE"},
   {CMD_BEQ, "BEQ"},
   {CMD_ADD, "ADD"},
+  {CMD_SLL, "SLL"},
+  {CMD_SLTU, "SLTU"},
+  {CMD_XOR, "XOR"},
   {CMD_ST, "ST"},
   {CMD_LD, "LD"},
   {CMD_SLLI, "SLLI"},
   {CMD_SRLI, "SRLI"},
-  {CMD_SRAI, "CMD_SRAI"},
+  {CMD_SRAI, "SRAI"},
   {CMD_AND, "AND"},
   {CMD_OR, "OR"},
   {CMD_ANDI, "ANDI"},
   {CMD_ADDI, "ADDI"},
+  {CMD_SLTIU, "SLTIU"},
+  {CMD_XORI, "XORI"},
   {CMD_ECALL, "ECALL"},
+  {CMD_NOP, "NOP"},
 };
 
 class EXECUTE
@@ -164,6 +176,8 @@ class EXECUTE
   {
     {CMD_AUIPC, &EXECUTE::exe_auipc},
     {CMD_ADDI, &EXECUTE::exe_addi},
+    {CMD_SLTIU, &EXECUTE::exe_sltiu},
+    {CMD_XORI, &EXECUTE::exe_xori},
     {CMD_SUB, &EXECUTE::exe_sub},
     {CMD_LI, &EXECUTE::exe_li},
     {CMD_JAL, &EXECUTE::exe_jal},
@@ -178,6 +192,9 @@ class EXECUTE
     {CMD_BLTU, &EXECUTE::exe_bltu},
     {CMD_BLT, &EXECUTE::exe_blt},
     {CMD_ADD, &EXECUTE::exe_add},
+    {CMD_SLL, &EXECUTE::exe_sll},
+    {CMD_SLTU, &EXECUTE::exe_sltu},
+    {CMD_XOR, &EXECUTE::exe_xor},
     {CMD_ST, &EXECUTE::exe_st},
     {CMD_LD, &EXECUTE::exe_ld},
     {CMD_SLLI, &EXECUTE::exe_slli},
@@ -201,6 +218,19 @@ class EXECUTE
   void exe_addi(INST* inst)
   {
     inst->dst_value = inst->src1_value + inst->imm_value;
+  }
+
+  void exe_sltiu(INST* inst)
+  {
+    UREG src1 = (UREG)inst->src1_value;
+    UREG src2 = (UREG)inst->imm_value;
+
+    inst->dst_value = (src1 < src2)? 1 : 0;
+  }
+
+  void exe_xori(INST* inst)
+  {
+    inst->dst_value = inst->src1_value ^ inst->imm_value;
   }
 
   void exe_andi(INST* inst)
@@ -294,6 +324,24 @@ class EXECUTE
     inst->dst_value = inst->src1_value + inst->src2_value;
   }
 
+  void exe_sll(INST* inst)
+  {
+    inst->dst_value = inst->src1_value << (inst->src2_value & 0x3f);
+  }
+
+  void exe_sltu(INST* inst)
+  {
+    UREG src1 = (UREG)inst->src1_value;
+    UREG src2 = (UREG)inst->src2_value;
+
+    inst->dst_value = (src1 < src2)? 1 : 0;
+  }
+
+  void exe_xor(INST* inst)
+  {
+    inst->dst_value = inst->src1_value ^ inst->src2_value;
+  }
+
   void exe_and(INST* inst)
   {
     inst->dst_value = inst->src1_value & inst->src2_value;
@@ -361,8 +409,10 @@ class DECODE
     inst->src1_num = GET_RS1(opcode);
     inst->imm_value = GET_IIMM(opcode);
 
-    if ( (opcode & 0x3f) == 0x1b )
+    if ( (opcode & 0x7f) == 0x1b )
       inst->is_w_type = true;
+    else
+      assert( (opcode & 0x7f) == 0x13 );
   }
 
   void dec_b_type(INST* inst, OPCODE opcode)
@@ -378,6 +428,11 @@ class DECODE
     unsigned func3 = GET_FUNC3(opcode);
     unsigned func7 = GET_FUNC7(opcode);
 
+    if ( (opcode & 0x7f) == 0x3b )
+      inst->is_w_type = true;
+    else
+      assert( (opcode & 0x7f) == 0x33 );
+
     if ( func3 == 0 )
     {
       if ( func7 == 0 )
@@ -386,6 +441,21 @@ class DECODE
         inst->cmd = CMD_SUB;
       else
         assert(0);
+    }
+    else if ( func3 == 1 )
+    {
+      assert(func7 == 0);
+      inst->cmd = CMD_SLL;
+    }
+    else if ( func3 == 3 )
+    {
+      assert(func7 == 0);
+      inst->cmd = CMD_SLTU;
+    }
+    else if ( func3 == 4 )
+    {
+      assert(func7 == 0);
+      inst->cmd = CMD_XOR;
     }
     else if ( func3 == 6 )
     {
@@ -851,7 +921,7 @@ class DECODE
     &DECODE::dec_none,
     &DECODE::dec_none,
     &DECODE::dec_none,
-    &DECODE::dec_none,
+    &DECODE::dec_r_type,
     &DECODE::dec_none,
     &DECODE::dec_none,
     &DECODE::dec_none,
@@ -1025,13 +1095,13 @@ class ELF
     if ( elf_head.e_flags & EF_RISCV_RVC )
       elf_flags.insert("EF_RISCV_RVC");
   
-    if ( elf_head.e_flags & EF_RISCV_FLOAT_ABI == EF_RISCV_FLOAT_ABI_SOFT )
+    if ( (elf_head.e_flags & EF_RISCV_FLOAT_ABI) == EF_RISCV_FLOAT_ABI_SOFT )
       elf_flags.insert("EF_RISCV_FLOAT_ABI_SOFT");
-    else if ( elf_head.e_flags & EF_RISCV_FLOAT_ABI == EF_RISCV_FLOAT_ABI_SINGLE )
+    else if ( (elf_head.e_flags & EF_RISCV_FLOAT_ABI) == EF_RISCV_FLOAT_ABI_SINGLE )
       elf_flags.insert("EF_RISCV_FLOAT_ABI_SINGLE");
-    else if ( elf_head.e_flags & EF_RISCV_FLOAT_ABI == EF_RISCV_FLOAT_ABI_DOUBLE )
+    else if ( (elf_head.e_flags & EF_RISCV_FLOAT_ABI) == EF_RISCV_FLOAT_ABI_DOUBLE )
       elf_flags.insert("EF_RISCV_FLOAT_ABI_DOUBLE");
-    else if ( elf_head.e_flags & EF_RISCV_FLOAT_ABI == EF_RISCV_FLOAT_ABI_QUAD )
+    else if ( (elf_head.e_flags & EF_RISCV_FLOAT_ABI) == EF_RISCV_FLOAT_ABI_QUAD )
       elf_flags.insert("EF_RISCV_FLOAT_ABI_QUAD");
   
     assert( sizeof(Elf64_Phdr) == elf_head.e_phentsize );
@@ -1152,17 +1222,30 @@ class MEM
 
   OPCODE get_opcode(ADDRESS pc)
   {
-    ADDRESS paddr = mmu->access_page_table(pc);
-    OPCODE* opcode = (OPCODE*) paddr;
-    return *opcode;
+    if ( (pc & 0x3ff) == 0x3fe )
+    {
+      ADDRESS paddr = mmu->access_page_table(pc);
+      OPCODE* opcode_lower = (OPCODE*) paddr;
+
+      paddr = mmu->access_page_table(pc+2);
+      OPCODE* opcode_upper = (OPCODE*) paddr;
+
+      return ((*opcode_upper & 0xffff) << 16) | (*opcode_lower & 0xffff);
+    }
+    else
+    {
+      ADDRESS paddr = mmu->access_page_table(pc);
+      OPCODE* opcode = (OPCODE*) paddr;
+      return *opcode;
+    }
   }
 
   template <typename T>
-  void read_mem(INST* inst)
+  T read_mem(ADDRESS vaddr)
   {
-    ADDRESS paddr = mmu->access_page_table(inst->mem_addr);
+    ADDRESS paddr = mmu->access_page_table(vaddr);
     T* data = (T*)paddr;
-    inst->dst_value = *data;
+    return *data;
   }
   
   template <typename T>
@@ -1189,7 +1272,7 @@ class CPU
     pc = elf.get_e_entry();
   
     // SP initial value
-    reg[2] = 0xfee8b50;
+    reg[2] = 0x7ffffb50;
 
     mem->write_mem<uint64_t>((ADDRESS)reg[2], (uint64_t)argc);
   
@@ -1220,13 +1303,13 @@ class CPU
     if ( inst.cmd == CMD_LD )
     {
       if ( inst.mem_size == 8 )
-        mem->read_mem<uint64_t>(&inst);
+        inst.dst_value = mem->read_mem<uint64_t>(inst.mem_addr);
       else if ( inst.mem_size == 4 )
-        mem->read_mem<uint32_t>(&inst);
+        inst.dst_value = mem->read_mem<uint32_t>(inst.mem_addr);
       else if ( inst.mem_size == 2 )
-        mem->read_mem<uint16_t>(&inst);
+        inst.dst_value = mem->read_mem<uint16_t>(inst.mem_addr);
       else if ( inst.mem_size == 1 )
-        mem->read_mem<uint8_t>(&inst);
+        inst.dst_value = mem->read_mem<uint8_t>(inst.mem_addr);
       else
         assert(0);
     }
@@ -1243,6 +1326,10 @@ class CPU
       else
         assert(0);
     }
+
+    ADDRESS paddr = mmu->access_page_table(0xfee8758);
+    uint64_t* data = (uint64_t*)paddr;
+    //cout << "read data 0xfee8758 " << *data << endl;
 
     if ( inst.is_w_type )
       convert_to_w(&inst);
@@ -1268,8 +1355,10 @@ class CPU
            << " DST_VALUE:" << inst.dst_value;
   
     if ( inst.mem_addr )
-      cout << " MEM_ADDR:" << inst.mem_addr
-           << " MEM_DATA:" << inst.src2_value;
+      cout << " MEM_ADDR:" << inst.mem_addr;
+
+    if ( inst.cmd == CMD_ST )
+      cout << " MEM_DATA:" << inst.src2_value;
   
     if ( inst.br_target )
       cout << " BR_TARGET:" << inst.br_target;
@@ -1292,15 +1381,25 @@ class CPU
     REG syscall_arg2 = reg[11];
     REG syscall_arg3 = reg[12];
 
+    int output;
+    struct stat temp_stat;
+    uint32_t st_mode;
+
     switch( syscall_num )
     {
       case 80 : // fstat
-        syscall_arg2   = mmu->access_page_table((ADDRESS)syscall_arg2);
-        int output     = fstat((int)syscall_arg1, (struct stat*)syscall_arg2);
+        syscall_arg2 = mmu->access_page_table((ADDRESS)syscall_arg2);
+        output = fstat((int)syscall_arg1, &temp_stat);
+        memcpy((void*)syscall_arg2, &temp_stat, 128);
+        // write mode_t 0x2190
+        st_mode = 0x2190;
+        memcpy((void*)(syscall_arg2 + 16), &st_mode, 4);
         if ( output != 0)
           perror("fstat error");
         inst.dst_value = output;
         break;
+      default :
+        assert(0);
     }
   }
   
@@ -1365,7 +1464,7 @@ int main ( int argc, char* argv[] )
 
   CPU cpu = CPU(elf, mmu, mem, argc - 1, argv_no_first);
 
-  for ( unsigned i = 0; i < 700; i++ )
+  for ( unsigned i = 0; i < 100000; i++ )
     cpu.step();
 
   return 0;
