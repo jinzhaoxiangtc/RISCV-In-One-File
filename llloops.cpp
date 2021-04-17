@@ -293,9 +293,7 @@
  
 #include <stdio.h>
 #include <math.h>
-#include <conio.h>
 #include <stdlib.h>
-#include <dos.h> 
 
 
    struct Arrays

@@ -4,9 +4,15 @@ int a = 0;
 
 int main (int argc, char *argv[])
 {
-  FILE* fid = fopen(argv[1], "w+");
+  if ( argc < 2 )
+  {
+    printf("No output file.\n");
+    return -1;
+  }
 
   printf("argc %d, argv[1] %s\n", argc, argv[1]);
+
+  FILE* fid = fopen(argv[1], "w");
 
   for ( unsigned i = 0; i < 10; i++ )
   {

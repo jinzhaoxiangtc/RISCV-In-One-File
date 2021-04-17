@@ -24,7 +24,10 @@ ftrace = open(sys.argv[2], 'r')
 startRecording = False
 simInst = []
 
-except_pc = [0x1bbba, 0x1bbbe, 0x1bbc2, 0x1bbc6, 0x1bbca, 0x1bbce, 0x1bbd2, 0x1bbd6, 0x1bbda, 0x1bbde, 0x1bbe0, 0x1bbe2, 0x1bbe4]
+skip_ld_cmp = 0
+
+except_pc =[]
+#except_pc = [0x1bbba, 0x1bbbe, 0x1bbc2, 0x1bbc6, 0x1bbca, 0x1bbce, 0x1bbd2, 0x1bbd6, 0x1bbda, 0x1bbde, 0x1bbe0, 0x1bbe2, 0x1bbe4]
 #except_pc = [0x1b854, 0x1b858, 0x1b85c, 0x1b860, 0x1b864, 0x1b868, 0x1b86c, 0x1b870, 0x1b874, 0x1b878, 0x1b87a, 0x1b87c, 0x1b87e]
 #0x1b046, 0x1b04a, 0x1b04e, 0x1b052, 0x1b056, 0x1b05a, 0x1b05e, 0x1b062, 0x1b066, 0x1b06a, 0x1b06c, 0x1b06e, 0x1b070]
 
@@ -77,6 +80,10 @@ for line in simInst :
 
   if "trap_user_ecall" in line :
     tracePC = int(words[-1], 16)
+    # Use the last instruction dest
+    if traceDstValue == 80 :
+      # Due to fstat, don't compare the data value for the next 13 loads
+      skip_ld_cmp = 13
   else :
     tracePC = int(words[3], 16)
 
@@ -96,7 +103,11 @@ for line in simInst :
         if words[-2] == 'mem' :
           assert hasSimDst, "Trace has value, but not sim output. PC " + hex(simPC)
           traceDstValue = int(words[-3], 16)
-          assert simDstValue == traceDstValue, "Output are different. PC " + hex(simPC) + " Sim Dst " + hex(simDstValue) + " trace Dst " + hex(traceDstValue)
+          
+          if skip_ld_cmp :
+            skip_ld_cmp = skip_ld_cmp - 1
+          else :
+            assert simDstValue == traceDstValue, "Output are different. PC " + hex(simPC) + " Sim Dst " + hex(simDstValue) + " trace Dst " + hex(traceDstValue)
         # store instructions
         else :
           assert not hasSimDst , "Trace has no value, but sim output ahs value."
