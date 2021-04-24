@@ -310,7 +310,10 @@ class EXECUTE
   void exe_bne(INST* inst)
   {
     if ( inst->src1_value != inst->src2_value )
+    {
+      printf("%ld, %ld\n", inst->src1_value, inst->src2_value);
       inst->br_target = inst->pc + inst->imm_value;
+    }
   }
 
   void exe_beq(INST* inst)
@@ -1272,7 +1275,10 @@ class CPU
     pc = elf.get_e_entry();
   
     // SP initial value
-    reg[2] = 0x7ffffb50;
+    reg[2] = 0x3ffffffb50;
+
+    // Program Break initial value
+    brk = 0x1f438;
 
     mem->write_mem<uint64_t>((ADDRESS)reg[2], (uint64_t)argc);
   
@@ -1373,6 +1379,7 @@ class CPU
   MMU*    mmu;
   MEM*    mem;
   INST    inst;
+  REG     brk;
 
   void execute_ecall()
   {
@@ -1381,7 +1388,6 @@ class CPU
     REG syscall_arg2 = reg[11];
     REG syscall_arg3 = reg[12];
 
-    int output;
     struct stat temp_stat;
     uint32_t st_mode;
 
@@ -1389,16 +1395,31 @@ class CPU
     {
       case 80 : // fstat
         syscall_arg2 = mmu->access_page_table((ADDRESS)syscall_arg2);
-        output = fstat((int)syscall_arg1, &temp_stat);
-        memcpy((void*)syscall_arg2, &temp_stat, 128);
+        
+	inst.dst_value = fstat((int)syscall_arg1, &temp_stat);
+        if ( inst.dst_value != 0 )
+          perror("fstat error");
+        
+	memcpy((void*)syscall_arg2, &temp_stat, 128);
         // write mode_t 0x2190
         st_mode = 0x2190;
         memcpy((void*)(syscall_arg2 + 16), &st_mode, 4);
-        if ( output != 0)
-          perror("fstat error");
-        inst.dst_value = output;
-        break;
+        
+	break;
+      case 214 : // sbrk
+        if ( syscall_arg1 == 0 )
+	{
+	}
+	else
+        {
+	  brk = syscall_arg1;
+        }
+	
+        inst.dst_value = brk;
+	
+	break;
       default :
+        printf("Unsupported syscall number %ld, arg1 %lx\n", syscall_num, syscall_arg1);
         assert(0);
     }
   }
