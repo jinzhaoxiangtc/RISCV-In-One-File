@@ -51,6 +51,13 @@ typedef uint64_t UREG;
 enum COMMAND
 {
   CMD_AUIPC,
+  CMD_BEQ,
+  CMD_BGE,
+  CMD_BGEU,
+  CMD_BLT,
+  CMD_BLTU,
+  CMD_BNE,
+  CMD_DIVU,
   CMD_LI,
   CMD_ADDI,
   CMD_SLTIU,
@@ -59,11 +66,6 @@ enum COMMAND
   CMD_JAL,
   CMD_JALR,
   CMD_J,
-  CMD_BGEU,
-  CMD_BNE,
-  CMD_BEQ,
-  CMD_BLTU,
-  CMD_BLT,
   CMD_ADD,
   CMD_SUB,
   CMD_SLL,
@@ -73,6 +75,7 @@ enum COMMAND
   CMD_OR,
   CMD_ST,
   CMD_LD,
+  CMD_REMU,
   CMD_SLLI,
   CMD_SRXI,
   CMD_SRLI,
@@ -97,6 +100,7 @@ typedef struct instruction
   ADDRESS  pc;
   ADDRESS  mem_addr;
   unsigned mem_size;
+  bool     mem_signed;
   bool     is_16bits;
   bool     is_w_type;
 } INST;
@@ -120,7 +124,7 @@ const COMMAND br_exe_tbl[8] =
   CMD_BGEU,
   CMD_BGEU,
   CMD_BLT,
-  CMD_BGEU,
+  CMD_BGE,
   CMD_BLTU,
   CMD_BGEU
 };
@@ -130,22 +134,25 @@ using namespace std;
 const map<COMMAND, string> ExeClassString =
 {
   {CMD_AUIPC, "AUIPC"},
+  {CMD_BEQ, "BEQ"},
+  {CMD_BGE, "BGE"},
+  {CMD_BGEU, "BGEU"},
+  {CMD_BLTU, "BLTU"},
+  {CMD_BLT, "BLT"},
+  {CMD_BNE, "BNE"},
+  {CMD_DIVU, "DIVU"},
   {CMD_SUB, "SUB"},
   {CMD_LI, "LI"},
   {CMD_JAL, "JAL"},
   {CMD_JALR, "JALR"},
   {CMD_J, "J"},
-  {CMD_BGEU, "BGEU"},
-  {CMD_BLTU, "BLTU"},
-  {CMD_BLT, "BLT"},
-  {CMD_BNE, "BNE"},
-  {CMD_BEQ, "BEQ"},
   {CMD_ADD, "ADD"},
   {CMD_SLL, "SLL"},
   {CMD_SLTU, "SLTU"},
   {CMD_XOR, "XOR"},
   {CMD_ST, "ST"},
   {CMD_LD, "LD"},
+  {CMD_REMU, "CMD_REMU"},
   {CMD_SLLI, "SLLI"},
   {CMD_SRLI, "SRLI"},
   {CMD_SRAI, "SRAI"},
@@ -175,6 +182,9 @@ class EXECUTE
   const map<COMMAND, Execute> cmd_map =
   {
     {CMD_AUIPC, &EXECUTE::exe_auipc},
+    {CMD_BGE, &EXECUTE::exe_bge},
+    {CMD_BGEU, &EXECUTE::exe_bgeu},
+    {CMD_DIVU, &EXECUTE::exe_divu},
     {CMD_ADDI, &EXECUTE::exe_addi},
     {CMD_SLTIU, &EXECUTE::exe_sltiu},
     {CMD_XORI, &EXECUTE::exe_xori},
@@ -183,7 +193,6 @@ class EXECUTE
     {CMD_JAL, &EXECUTE::exe_jal},
     {CMD_JALR, &EXECUTE::exe_jalr},
     {CMD_J, &EXECUTE::exe_j},
-    {CMD_BGEU, &EXECUTE::exe_bgeu},
     {CMD_AND, &EXECUTE::exe_and},
     {CMD_OR, &EXECUTE::exe_or},
     {CMD_ANDI, &EXECUTE::exe_andi},
@@ -192,6 +201,7 @@ class EXECUTE
     {CMD_BLTU, &EXECUTE::exe_bltu},
     {CMD_BLT, &EXECUTE::exe_blt},
     {CMD_ADD, &EXECUTE::exe_add},
+    {CMD_REMU, &EXECUTE::exe_remu},
     {CMD_SLL, &EXECUTE::exe_sll},
     {CMD_SLTU, &EXECUTE::exe_sltu},
     {CMD_XOR, &EXECUTE::exe_xor},
@@ -213,6 +223,15 @@ class EXECUTE
   void exe_auipc(INST* inst)
   {
     inst->dst_value = inst->pc + inst->imm_value;
+  }
+
+  void exe_divu(INST* inst)
+  {
+    UREG src1 = (UREG)inst->src1_value;
+    UREG src2 = (UREG)inst->src2_value;
+    
+    UREG result = src1 / src2;
+    inst->dst_value = result;
   }
 
   void exe_addi(INST* inst)
@@ -283,6 +302,12 @@ class EXECUTE
     inst->br_target = inst->pc + inst->imm_value;
   }
 
+  void exe_bge(INST* inst)
+  {
+    if ( inst->src1_value >= inst->src2_value )
+      inst->br_target = inst->pc + inst->imm_value;
+  }
+
   void exe_bgeu(INST* inst)
   {
     UREG src1 = (UREG)inst->src1_value;
@@ -325,6 +350,15 @@ class EXECUTE
   void exe_add(INST* inst)
   {
     inst->dst_value = inst->src1_value + inst->src2_value;
+  }
+
+  void exe_remu(INST* inst)
+  {
+    UREG src1 = (UREG)inst->src1_value;
+    UREG src2 = (UREG)inst->src2_value;
+
+    UREG result = src1 % src2;
+    inst->dst_value = result;
   }
 
   void exe_sll(INST* inst)
@@ -460,6 +494,11 @@ class DECODE
       assert(func7 == 0);
       inst->cmd = CMD_XOR;
     }
+    else if ( func3 == 5 )
+    {
+      if ( func7 == 1 )
+        inst->cmd = CMD_DIVU;
+    }
     else if ( func3 == 6 )
     {
       assert(func7 == 0);
@@ -467,8 +506,10 @@ class DECODE
     }
     else if ( func3 == 7 )
     {
-      assert(func7 == 0);
-      inst->cmd = CMD_AND;
+      if ( func7 == 0 )
+        inst->cmd = CMD_AND;
+      else if ( func7 == 1 )
+        inst->cmd = CMD_REMU;
     }
     else
       assert(0);
@@ -778,6 +819,7 @@ class DECODE
     inst->src1_num  = GET_C_RS1_prime(opcode);
     inst->imm_value = ((opcode << 1) & 0x40) | ((opcode >> 7) & 0x38) | ((opcode >> 4) & 0x4);
     inst->mem_size  = 4;
+    inst->mem_signed= true;
   }
 
   void dec_c_ld(INST* inst, OPCODE opcode)
@@ -1311,7 +1353,14 @@ class CPU
       if ( inst.mem_size == 8 )
         inst.dst_value = mem->read_mem<uint64_t>(inst.mem_addr);
       else if ( inst.mem_size == 4 )
-        inst.dst_value = mem->read_mem<uint32_t>(inst.mem_addr);
+      {
+        REG data = mem->read_mem<uint32_t>(inst.mem_addr);
+	if ( inst.mem_signed )
+	{
+          data = ((data + 0x80000000) & 0xffffffff) - 0x80000000;
+	}
+        inst.dst_value = data;
+      }
       else if ( inst.mem_size == 2 )
         inst.dst_value = mem->read_mem<uint16_t>(inst.mem_addr);
       else if ( inst.mem_size == 1 )
