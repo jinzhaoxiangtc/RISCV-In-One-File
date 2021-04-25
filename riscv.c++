@@ -75,6 +75,7 @@ enum COMMAND
   CMD_OR,
   CMD_ST,
   CMD_LD,
+  CMD_MUL,
   CMD_REMU,
   CMD_SLLI,
   CMD_SRXI,
@@ -152,6 +153,7 @@ const map<COMMAND, string> ExeClassString =
   {CMD_XOR, "XOR"},
   {CMD_ST, "ST"},
   {CMD_LD, "LD"},
+  {CMD_MUL, "MUL"},
   {CMD_REMU, "CMD_REMU"},
   {CMD_SLLI, "SLLI"},
   {CMD_SRLI, "SRLI"},
@@ -207,6 +209,7 @@ class EXECUTE
     {CMD_XOR, &EXECUTE::exe_xor},
     {CMD_ST, &EXECUTE::exe_st},
     {CMD_LD, &EXECUTE::exe_ld},
+    {CMD_MUL, &EXECUTE::exe_mul},
     {CMD_SLLI, &EXECUTE::exe_slli},
     {CMD_SRLI, &EXECUTE::exe_srli},
     {CMD_SRAI, &EXECUTE::exe_srai},
@@ -336,7 +339,6 @@ class EXECUTE
   {
     if ( inst->src1_value != inst->src2_value )
     {
-      printf("%ld, %ld\n", inst->src1_value, inst->src2_value);
       inst->br_target = inst->pc + inst->imm_value;
     }
   }
@@ -397,6 +399,11 @@ class EXECUTE
   void exe_ld(INST* inst)
   {
     inst->mem_addr = inst->src1_value + inst->imm_value;
+  }
+
+  void exe_mul(INST* inst)
+  {
+    inst->dst_value = inst->src1_value * inst->src2_value;
   }
 
 }; // end of class EXECUTE
@@ -474,6 +481,8 @@ class DECODE
     {
       if ( func7 == 0 )
         inst->cmd = CMD_ADD;
+      else if ( func7 == 1 )
+        inst->cmd = CMD_MUL;
       else if ( func7 == 0x20 )
         inst->cmd = CMD_SUB;
       else
@@ -705,6 +714,15 @@ class DECODE
     inst->is_w_type= true;
   }
 
+  void dec_c_subw(INST* inst, OPCODE opcode)
+  {
+    inst->cmd      = CMD_SUB;
+    inst->dst_num  = GET_C_RS1_prime(opcode);
+    inst->src1_num = GET_C_RS1_prime(opcode);
+    inst->src2_num = GET_C_RS2_prime(opcode);
+    inst->is_w_type= true;
+  }
+
   void dec_c_addi(INST* inst, OPCODE opcode)
   {
     if ( GET_C_RS1(opcode) )
@@ -895,7 +913,7 @@ class DECODE
     &DECODE::dec_c_andi,
     &DECODE::dec_c_andi,
     &DECODE::dec_c_andi,
-    &DECODE::dec_none,
+    &DECODE::dec_c_subw,
     &DECODE::dec_c_addw,
     &DECODE::dec_none,
     &DECODE::dec_none
@@ -1442,6 +1460,23 @@ class CPU
 
     switch( syscall_num )
     {
+      case 57 : // close
+        // If the file descriptor is valid
+        if ( fcntl((int)syscall_arg1, F_GETFD) )
+	  inst.dst_value = close((int)syscall_arg1);
+	else
+	  inst.dst_value = 0;
+
+	if ( inst.dst_value != 0 )
+	  perror("close error");
+
+        break;
+      case 64 : // write
+        syscall_arg2 = mmu->access_page_table((ADDRESS)syscall_arg2);
+
+        inst.dst_value = write((int)syscall_arg1, (void*)syscall_arg2, (size_t)syscall_arg3);
+
+        break;
       case 80 : // fstat
         syscall_arg2 = mmu->access_page_table((ADDRESS)syscall_arg2);
         
@@ -1454,6 +1489,10 @@ class CPU
         st_mode = 0x2190;
         memcpy((void*)(syscall_arg2 + 16), &st_mode, 4);
         
+	break;
+      case 93 : // exit
+        exit((int)syscall_arg1);
+
 	break;
       case 214 : // sbrk
         if ( syscall_arg1 == 0 )
@@ -1468,7 +1507,8 @@ class CPU
 	
 	break;
       default :
-        printf("Unsupported syscall number %ld, arg1 %lx\n", syscall_num, syscall_arg1);
+        printf("Unsupported syscall number %ld, arg1 %lx, arg2 %lx, arg3 %lx\n", syscall_num, syscall_arg1,
+	syscall_arg2, syscall_arg3);
         assert(0);
     }
   }
