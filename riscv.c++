@@ -880,6 +880,14 @@ class DECODE
     inst->mem_size  = 4;
   }
 
+  void dec_c_xor(INST* inst, OPCODE opcode)
+  {
+    inst->cmd      = CMD_XOR;
+    inst->dst_num  = GET_C_RS1_prime(opcode);
+    inst->src1_num = GET_C_RS1_prime(opcode);
+    inst->src2_num = GET_C_RS2_prime(opcode);
+  }
+
   // bit 12 11 10 6 5
   const Decode decode_16_10001[32] =
   {
@@ -897,7 +905,7 @@ class DECODE
     &DECODE::dec_c_andi,
     &DECODE::dec_c_andi,
     &DECODE::dec_c_sub,
-    &DECODE::dec_none,
+    &DECODE::dec_c_xor,
     &DECODE::dec_c_or,
     &DECODE::dec_c_and,
     // 0x10
@@ -1335,12 +1343,18 @@ class CPU
     pc = elf.get_e_entry();
   
     // SP initial value
-    reg[2] = 0x3ffffffb50;
+    reg[2] = 0x3ffffffb40;
 
     // Program Break initial value
-    brk = 0x1f438;
+    brk = 0x1fc08;
 
     mem->write_mem<uint64_t>((ADDRESS)reg[2], (uint64_t)argc);
+
+    for ( unsigned i = 0; i < argc; i++ )
+    {
+      mem->write_mem<uint64_t>((ADDRESS)(reg[2] + 8 + 8*i), (uint64_t)(argv[i]));
+      printf("address %lx, argv address %lx\n", reg[2] + 8 + 8*i, (uint64_t)argv[i]);
+    }
   
     cout << hex << "Execution PC : " << pc << endl;
   }
@@ -1486,7 +1500,7 @@ class CPU
         
 	memcpy((void*)syscall_arg2, &temp_stat, 128);
         // write mode_t 0x2190
-        st_mode = 0x2190;
+        st_mode = 0x1180;
         memcpy((void*)(syscall_arg2 + 16), &st_mode, 4);
         
 	break;
@@ -1505,6 +1519,11 @@ class CPU
 	
         inst.dst_value = brk;
 	
+        break;
+      case 1024 : // open
+        inst.dst_value = open((char*)syscall_arg1, (int)syscall_arg2);
+        printf("fid %ld\n", inst.dst_value);
+
 	break;
       default :
         printf("Unsupported syscall number %ld, arg1 %lx, arg2 %lx, arg3 %lx\n", syscall_num, syscall_arg1,
@@ -1574,7 +1593,7 @@ int main ( int argc, char* argv[] )
 
   CPU cpu = CPU(elf, mmu, mem, argc - 1, argv_no_first);
 
-  for ( unsigned i = 0; i < 100000; i++ )
+  while (1)
     cpu.step();
 
   return 0;
